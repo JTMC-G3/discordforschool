@@ -2,14 +2,19 @@ import asyncio
 import threading
 from flask import Flask, render_template, request, redirect, url_for, flash
 import discord
+from dotenv import load_dotenv
+import os
 
 intents = discord.Intents.all()
 client = discord.Client(intents=intents)
 
-DISCORD_USER_TOKEN = "discordtoken"
+load_dotenv()
+
+SECRET_KEY = os.getenv("FLASK_SECRET_KEY", "fallback_key")
+DISCORD_USER_TOKEN = os.getenv("DISCORD_USER_TOKEN")
 
 app = Flask(__name__)
-app.secret_key = "replace_with_a_secure_random_key"
+app.secret_key = SECRET_KEY
 
 def run_client():
     loop = asyncio.new_event_loop()
