@@ -4,6 +4,74 @@
   <meta charset="utf-8">
   <title>Discord-style sender</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <style>
+    body {
+      background: #2b2d31;
+      color: #dbdee1;
+      font-family: "gg sans", Inter, system-ui, sans-serif;
+    }
+
+    .container {
+      max-width: 600px;
+      margin: 50px auto;
+      padding: 20px;
+      background: #313338;
+      border-radius: 8px;
+    }
+
+    h1 {
+      margin-bottom: 20px;
+    }
+
+    label {
+      display: block;
+      margin-top: 10px;
+      color: #a3a6aa;
+    }
+
+    input {
+      width: 100%;
+      padding: 10px;
+      margin-top: 5px;
+      background: #1e1f22;
+      border: 1px solid #3f4147;
+      border-radius: 5px;
+      color: #dbdee1;
+    }
+
+    button {
+      margin-top: 15px;
+      padding: 6px 10px;
+      background: #5865f2;
+      border: none;
+      border-radius: 5px;
+      color: white;
+      font-weight: bold;
+      cursor: pointer;
+      font-size: 0.9em;
+    }
+
+    button:hover {
+      background: #4752c4;
+    }
+
+    .copy-btn {
+      margin-left: 10px;
+      background: #3f4147;
+      color: #dbdee1;
+      font-weight: normal;
+      padding: 4px 8px;
+      border-radius: 4px;
+    }
+
+    .copy-btn:hover {
+      background: #5865f2;
+      color: white;
+    }
+
+    .flash.success { color: #23a55a; }
+    .flash.error { color: #d1453b; }
+  </style>
 </head>
 <body>
   <div class="container">
@@ -16,13 +84,136 @@
       {% endif %}
     {% endwith %}
 
-    <form method="POST" action="{{ url_for('send') }}">
-      <label>Channel ID</label>
-      <input type="text" name="channel_id" required>
+    <form id="sendForm" method="POST" action="{{ url_for('send') }}">
+      <label>Server</label>
+      <select id="guild-select">
+        <option value="">Select a server</option>
+        {% for guild, channels in guild_channels.items() %}
+          <option value="{{ guild }}">{{ guild }}</option>
+        {% endfor %}
+      </select>
+
+      <label>Channel</label>
+      <select name="channel_id" id="channel-select" required>
+        <option value="">Select a channel</option>
+        {% for guild, channels in guild_channels.items() %}
+          {% for channel_name, channel_id in channels %}
+            <option value="{{ channel_id }}" data-guild="{{ guild }}">{{ channel_name }} ({{ channel_id }})</option>
+          {% endfor %}
+        {% endfor %}
+      </select>
+
       <label>Message</label>
       <input type="text" name="message" required>
       <button type="submit">Send</button>
     </form>
   </div>
+
+  <div id="messages-container">
+    <h2>Channel Messages</h2>
+    <ul id="messages-list"></ul>
+    <button id="prev-page">Previous (newer)</button>
+    <button id="next-page">Next (older)</button>
+  </div>
+
+<script>
+  const guildSelect = document.getElementById("guild-select");
+  const channelSelect = document.getElementById("channel-select");
+
+  guildSelect.addEventListener("change", function() {
+    const selectedGuild = this.value;
+    for (let option of channelSelect.options) {
+      if (!option.value) continue; // skip placeholder
+      option.style.display = option.dataset.guild === selectedGuild ? "block" : "none";
+    }
+    channelSelect.value = ""; // reset selection
+  });
+
+  // Hide all channels initially
+  for (let option of channelSelect.options) {
+    if (!option.value) continue;
+    option.style.display = "none";
+  }
+
+  let selectedChannel = null;
+  let oldestMessageId = null;
+  let newestMessageId = null;
+
+  channelSelect.addEventListener("change", function() {
+    selectedChannel = this.value;
+    loadMessages();
+  });
+
+  function createMessageElement(msg) {
+    const li = document.createElement("li");
+    li.textContent = `[${msg.created_at}] ${msg.author}: ${msg.content}`;
+
+    const copyBtn = document.createElement("button");
+    copyBtn.textContent = "Copy User ID";
+    copyBtn.className = "copy-btn";
+    copyBtn.addEventListener("click", () => {
+      navigator.clipboard.writeText(msg.author_id).then(() => {
+        alert("Copied user ID: " + msg.author_id);
+      });
+    });
+
+    li.appendChild(copyBtn);
+    return li;
+  }
+
+  function loadMessages(before=null, after=null) {
+  if (!selectedChannel) return;
+  let url = `/messages/${selectedChannel}`;
+  if (before) url += `?before=${before}`;
+  if (after) url += `?after=${after}`;
+
+  fetch(url)
+    .then(res => res.json())
+    .then(data => {
+      const list = document.getElementById("messages-list");
+      list.innerHTML = "";
+      if (data.messages && data.messages.length > 0) {
+        oldestMessageId = data.messages[data.messages.length - 1].id;
+        newestMessageId = data.messages[0].id;
+
+        data.messages.forEach(msg => {
+          list.appendChild(createMessageElement(msg));
+        });
+      }
+    });
+}
+
+
+  document.getElementById("next-page").addEventListener("click", () => {
+    if (oldestMessageId) loadMessages(oldestMessageId, null);
+  });
+
+  document.getElementById("prev-page").addEventListener("click", () => {
+  if (newestMessageId) {
+    loadMessages(null, newestMessageId);  // fetch 10 newer messages
+  }
+});
+
+
+  document.getElementById("sendForm").addEventListener("submit", async function(e) {
+    e.preventDefault(); // stop normal form submission
+
+    const formData = new FormData(this);
+
+    const response = await fetch(this.action, {
+        method: "POST",
+        body: formData
+    });
+
+    const data = await response.json();
+    if (data.message) {
+        const list = document.getElementById("messages-list");
+        list.prepend(createMessageElement(data.message));
+        this.querySelector("input[name='message']").value = "";
+    } else {
+        alert(data.error || "Failed to send message");
+    }
+  });
+</script>
 </body>
 </html>
